@@ -1,0 +1,14 @@
+{
+    "id": "splayerLyrics",
+    "name": "SPlayerLyrics",
+    "description": "Display SPlayer lyrics in DankMaterialShell's bar",
+    "version": "1.0.0",
+    "author": "cbowen",
+    "type": "widget",
+    "capabilities": ["dankbar-widget"],
+    "icon": "lyrics",
+    "component": "./SPlayerLyrics.qml",
+    "settings": "./SPlayerLyricsSettings.qml",
+    "dependencies": ["qt6-websockets"],
+    "permissions": ["settings_read", "settings_write", "network"]
+}
