@@ -212,6 +212,62 @@ PluginComponent {
         return text.trim();
     }
 
+    function isChineseChar(character) {
+        return (character >= "\u3400" && character <= "\u9fff") || (character >= "\uf900" && character <= "\ufaff");
+    }
+
+    function isWordChar(character) {
+        return (character >= "A" && character <= "Z")
+            || (character >= "a" && character <= "z")
+            || (character >= "0" && character <= "9")
+            || character === "'"
+            || character === "-";
+    }
+
+    function isWhitespace(character) {
+        return character === " " || character === "\t" || character === "\n" || character === "\r";
+    }
+
+    function appendVerticalToken(tokens, token) {
+        if (!token)
+            return;
+        tokens.push(token);
+    }
+
+    function verticalLineText(text) {
+        text = (text || "").trim();
+        if (!text)
+            return "";
+
+        var tokens = [];
+        var word = "";
+
+        for (var i = 0; i < text.length; i++) {
+            var character = text.charAt(i);
+
+            if (isWhitespace(character)) {
+                appendVerticalToken(tokens, word);
+                word = "";
+            } else if (isChineseChar(character)) {
+                appendVerticalToken(tokens, word);
+                word = "";
+                tokens.push(character);
+            } else if (isWordChar(character)) {
+                word += character;
+            } else {
+                appendVerticalToken(tokens, word);
+                word = "";
+                if (tokens.length > 0)
+                    tokens[tokens.length - 1] += character;
+                else
+                    tokens.push(character);
+            }
+        }
+
+        appendVerticalToken(tokens, word);
+        return tokens.join("\n");
+    }
+
     function currentLyricLineIndex() {
         var lyrics = activeLyrics();
         if (!lyrics || lyrics.length === 0)
@@ -251,6 +307,30 @@ PluginComponent {
         if (!lyrics || index < 0 || index + 1 >= lyrics.length)
             return null;
         return lyrics[index + 1];
+    }
+
+    function lyricLineEndTime(lyrics, index) {
+        if (!lyrics || index < 0 || index >= lyrics.length)
+            return 0;
+
+        var line = lyrics[index];
+        var startTime = Number(line.startTime || 0);
+        var endTime = Number(line.endTime || 0);
+        if (endTime <= startTime) {
+            var nextLine = lyrics[index + 1];
+            endTime = nextLine ? Number(nextLine.startTime || startTime) : 0;
+        }
+
+        return endTime > startTime ? endTime : 0;
+    }
+
+    function currentLyricRemainingMs() {
+        var lyrics = activeLyrics();
+        var index = currentLyricLineIndex();
+        var endTime = lyricLineEndTime(lyrics, index);
+        if (endTime <= 0)
+            return 0;
+        return Math.max(0, endTime - adjustedTimeMs());
     }
 
     function hasWordTiming(line) {
@@ -440,14 +520,79 @@ PluginComponent {
                 }
             }
 
-            StyledText {
-                text: root.displayText()
+            Item {
+                id: horizontalLyricClip
+
                 width: Math.min(displayMetrics.advanceWidth + 2, root.maxTextWidth)
-                font.pixelSize: Theme.fontSizeSmall
-                color: root.connected ? Theme.surfaceText : Theme.surfaceVariantText
-                elide: Text.ElideRight
-                maximumLineCount: 1
+                height: horizontalText.implicitHeight
+                clip: true
                 anchors.verticalCenter: parent.verticalCenter
+
+                readonly property string displayText: root.displayText()
+                readonly property real overflow: Math.max(0, horizontalText.implicitWidth - width)
+                readonly property int scrollLeadOutMs: 350
+                readonly property int scrollDelayMs: {
+                    var remaining = root.currentLyricRemainingMs();
+                    if (remaining <= 0)
+                        return 700;
+                    return Math.max(650, Math.min(1400, Math.round(remaining * 0.28)));
+                }
+                readonly property int scrollDurationMs: {
+                    var fallback = Math.max(900, Math.round(overflow * 18));
+                    var remaining = root.currentLyricRemainingMs();
+                    if (remaining <= 0)
+                        return fallback;
+
+                    var timedDuration = remaining - scrollDelayMs - scrollLeadOutMs;
+                    return Math.max(700, Math.min(7000, Math.round(timedDuration)));
+                }
+
+                function restartScroll() {
+                    horizontalScrollAnim.stop();
+                    horizontalText.x = 0;
+                    if (overflow > 0)
+                        horizontalScrollAnim.restart();
+                }
+
+                onDisplayTextChanged: {
+                    Qt.callLater(restartScroll);
+                }
+
+                onOverflowChanged: {
+                    if (overflow <= 0) {
+                        horizontalScrollAnim.stop();
+                        horizontalText.x = 0;
+                    } else if (!horizontalScrollAnim.running && horizontalText.x === 0) {
+                        Qt.callLater(restartScroll);
+                    }
+                }
+
+                StyledText {
+                    id: horizontalText
+
+                    text: horizontalLyricClip.displayText
+                    x: 0
+                    anchors.verticalCenter: parent.verticalCenter
+                    font.pixelSize: Theme.fontSizeSmall
+                    color: root.connected ? Theme.surfaceText : Theme.surfaceVariantText
+                    wrapMode: Text.NoWrap
+                }
+
+                SequentialAnimation {
+                    id: horizontalScrollAnim
+
+                    PauseAnimation {
+                        duration: horizontalLyricClip.scrollDelayMs
+                    }
+
+                    NumberAnimation {
+                        target: horizontalText
+                        property: "x"
+                        to: -horizontalLyricClip.overflow
+                        duration: horizontalLyricClip.scrollDurationMs
+                        easing.type: Easing.InOutQuad
+                    }
+                }
             }
         }
     }
@@ -487,53 +632,69 @@ PluginComponent {
 
                 readonly property string displayText: root.currentLyric ? root.currentLyric : "SPlayer"
                 readonly property real overflow: Math.max(0, verticalText.implicitHeight - height)
+                readonly property int scrollLeadOutMs: 350
+                readonly property int scrollDelayMs: {
+                    var remaining = root.currentLyricRemainingMs();
+                    if (remaining <= 0)
+                        return 700;
+                    return Math.max(650, Math.min(1400, Math.round(remaining * 0.28)));
+                }
+                readonly property int scrollDurationMs: {
+                    var fallback = Math.max(900, Math.round(overflow * 45));
+                    var remaining = root.currentLyricRemainingMs();
+                    if (remaining <= 0)
+                        return fallback;
+
+                    var timedDuration = remaining - scrollDelayMs - scrollLeadOutMs;
+                    return Math.max(700, Math.min(7000, Math.round(timedDuration)));
+                }
+
+                function restartScroll() {
+                    scrollAnim.stop();
+                    verticalText.y = 0;
+                    if (overflow > 0)
+                        scrollAnim.restart();
+                }
 
                 onDisplayTextChanged: {
-                    verticalText.y = 0;
-                    scrollAnim.restart();
+                    Qt.callLater(restartScroll);
+                }
+
+                onOverflowChanged: {
+                    if (overflow <= 0) {
+                        scrollAnim.stop();
+                        verticalText.y = 0;
+                    } else if (!scrollAnim.running && verticalText.y === 0) {
+                        Qt.callLater(restartScroll);
+                    }
                 }
 
                 StyledText {
                     id: verticalText
 
-                    text: verticalLyricClip.displayText
+                    text: root.verticalLineText(verticalLyricClip.displayText)
                     width: parent.width
                     y: 0
 
                     font.pixelSize: Math.max(8, Theme.fontSizeSmall - 1)
                     color: root.connected ? Theme.surfaceText : Theme.surfaceVariantText
-                    wrapMode: Text.WrapAnywhere
+                    wrapMode: Text.Wrap
                     horizontalAlignment: Text.AlignHCenter
-                    maximumLineCount: 8
                 }
 
                 SequentialAnimation {
                     id: scrollAnim
-                    running: verticalLyricClip.overflow > 0
-                    loops: Animation.Infinite
 
                     PauseAnimation {
-                        duration: 900
+                        duration: verticalLyricClip.scrollDelayMs
                     }
 
                     NumberAnimation {
                         target: verticalText
                         property: "y"
                         to: -verticalLyricClip.overflow
-                        duration: Math.max(1600, verticalLyricClip.overflow * 70)
+                        duration: verticalLyricClip.scrollDurationMs
                         easing.type: Easing.InOutQuad
-                    }
-
-                    PauseAnimation {
-                        duration: 900
-                    }
-
-                    NumberAnimation {
-                        target: verticalText
-                        property: "y"
-                        to: 0
-                        duration: 250
-                        easing.type: Easing.OutQuad
                     }
                 }
             }
