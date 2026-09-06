@@ -476,7 +476,7 @@ PluginComponent {
         id: socket
         active: false
 
-        onStatusChanged: {
+        onStatusChanged: function(status) {
             if (status === WebSocket.Open) {
                 reconnectAttempt = 0;
                 sendJson({ type: "get-song-info" });
