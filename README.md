@@ -80,3 +80,9 @@ The plugin sends:
 - Word-level highlighting is only shown when SPlayer provides usable `yrcData.words` timing.
 - The popout seekbar and album art come from the current MPRIS player exposed to DankMaterialShell.
 - If SPlayer and the system MPRIS player disagree, the bar lyrics follow SPlayer while album art/seekbar follow MPRIS.
+
+## Dux Shell compatibility
+
+The plugin ships its album-art component so the popout works on Dux Shell 2.0,
+which no longer exports `DankAlbumArt`. The component retains the circular cover,
+animated halo, cover transitions, and lazy animated artwork.

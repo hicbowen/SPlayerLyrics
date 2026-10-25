@@ -884,7 +884,7 @@ PluginComponent {
                             visible: root.activePlayer
                             anchors.verticalCenter: parent.verticalCenter
 
-                            DankAlbumArt {
+                            PlayerAlbumArt {
                                 id: coverArt
 
                                 width: 80
@@ -892,6 +892,7 @@ PluginComponent {
                                 visible: root.activePlayer && (root.activePlayer.trackArtUrl || "") !== ""
                                 anchors.horizontalCenter: parent.horizontalCenter
                                 activePlayer: root.activePlayer
+                                artUrl: root.activePlayer ? root.activePlayer.trackArtUrl || "" : ""
                                 showAnimation: true
                             }
 
